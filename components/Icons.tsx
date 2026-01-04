@@ -65,6 +65,7 @@ export const Icons = {
     AlertCircle: (props: IconProps) => <IconWrapper {...props}><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></IconWrapper>,
     Edit: (props: IconProps) => <IconWrapper {...props}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></IconWrapper>,
     Users: (props: IconProps) => <IconWrapper {...props}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></IconWrapper>,
+    User: (props: IconProps) => <IconWrapper {...props}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></IconWrapper>,
     ArrowUp: (props: IconProps) => <IconWrapper {...props}><path d="m18 15-6-6-6 6"/><path d="M12 9v12"/></IconWrapper>,
     ArrowDown: (props: IconProps) => <IconWrapper {...props}><path d="m6 9 6 6 6-6"/><path d="M12 3v12"/></IconWrapper>,
     Search: (props: IconProps) => <IconWrapper {...props}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></IconWrapper>,

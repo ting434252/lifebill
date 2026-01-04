@@ -6,6 +6,10 @@ import { StatsView } from './components/views/StatsView';
 import { ConfirmModal } from './components/ui/UI';
 import { CategorySettings, PlayerSettings, TemplateSettings, SettingsItem } from './components/Settings';
 import { AppRecord, CategoryConfig, CategoryType, ConfirmDialogState, NotificationState, DailyRecord, Template } from './types';
+import { LoginView } from './components/LoginView';
+import { auth, db } from './firebase'; // Import Firebase
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 
 // Helper for currency formatting
 const formatMoney = (amount: number) => new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0 }).format(amount);
@@ -15,55 +19,153 @@ const App = () => {
     const [currentCategory, setCurrentCategory] = useState<CategoryType>('daily');
     const [showSettings, setShowSettings] = useState(false);
     const [settingsPage, setSettingsPage] = useState<'menu' | 'categories' | 'players' | 'templates'>('menu');
+    
+    // --- Data States ---
     const [records, setRecords] = useState<AppRecord[]>([]);
     const [year] = useState(new Date().getFullYear());
-    const [notification, setNotification] = useState<NotificationState | null>(null); 
-    const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>({ isOpen: false, message: '', onConfirm: null, isDestructive: false });
-    const [editingRecord, setEditingRecord] = useState<AppRecord | null>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    
-    // Lifted State for Search Mode in CalendarView
-    const [isSearchMode, setIsSearchMode] = useState(false);
-    
-    // NOTE: Keep internal storage keys as 'tina_journal' to preserve user data
     const [categories, setCategories] = useState<CategoryConfig>({
         expense: ['餐飲','交通','購物','娛樂','居家'],
         income: ['薪水','獎金','投資']
     });
-
     const [mahjongPlayers, setMahjongPlayers] = useState<string[]>(['阿明', '小華', '美美']);
     const [templates, setTemplates] = useState<Template[]>([]);
 
-    // --- Persist Data ---
+    // --- UI/System States ---
+    const [notification, setNotification] = useState<NotificationState | null>(null); 
+    const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>({ isOpen: false, message: '', onConfirm: null, isDestructive: false });
+    const [editingRecord, setEditingRecord] = useState<AppRecord | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isSearchMode, setIsSearchMode] = useState(false);
+
+    // --- Auth & Cloud States ---
+    const [user, setUser] = useState<User | null>(null);
+    const [showLogin, setShowLogin] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false); // Visual indicator for cloud ops
+
+    // --- Auth Listener ---
     useEffect(() => {
-        const savedCats = localStorage.getItem('tina_journal_categories');
-        if (savedCats) { try { setCategories(JSON.parse(savedCats)); } catch(e) {} }
-        const savedPlayers = localStorage.getItem('tina_journal_players');
-        if (savedPlayers) { try { setMahjongPlayers(JSON.parse(savedPlayers)); } catch(e) {} }
-        const savedTemplates = localStorage.getItem('tina_journal_templates');
-        if (savedTemplates) { try { setTemplates(JSON.parse(savedTemplates)); } catch(e) {} }
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
+            if (currentUser) {
+                showNotification(`歡迎回來, ${currentUser.displayName || currentUser.email}`, 'success');
+                // Switch to cloud data source is handled in the Data Subscription effect
+            }
+        });
+        return () => unsubscribe();
     }, []);
 
-    useEffect(() => {
-        localStorage.setItem('tina_journal_categories', JSON.stringify(categories));
-    }, [categories]);
+    // --- Data Persistence Logic (The Core Change) ---
+    // Rule: 
+    // If User is NULL -> Read/Write LocalStorage
+    // If User is SET -> Read/Write Firestore (Realtime)
 
+    // 1. Load Data (Subscription)
     useEffect(() => {
-        localStorage.setItem('tina_journal_players', JSON.stringify(mahjongPlayers));
-    }, [mahjongPlayers]);
+        let unsubscribeFirestore: (() => void) | undefined;
 
-    useEffect(() => {
-        localStorage.setItem('tina_journal_templates', JSON.stringify(templates));
-    }, [templates]);
+        if (user) {
+            // --- CLOUD MODE: Subscribe to Firestore ---
+            setIsSyncing(true);
+            const userDocRef = doc(db, 'users', user.uid, 'years', year.toString());
+            
+            unsubscribeFirestore = onSnapshot(userDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.records) setRecords(data.records);
+                    if (data.categories) setCategories(data.categories);
+                    if (data.players) setMahjongPlayers(data.players);
+                    if (data.templates) setTemplates(data.templates);
+                } else {
+                    // New cloud user or new year: Initialize with defaults or empty
+                    // Optional: could ask to merge local data here, but keeping it simple: start fresh or empty
+                    setRecords([]); 
+                    // Keep default categories/players if doc doesn't exist yet
+                }
+                setIsSyncing(false);
+            }, (error) => {
+                console.error("Sync error:", error);
+                showNotification("雲端同步失敗", "error");
+                setIsSyncing(false);
+            });
 
-    useEffect(() => {
-        const localData = localStorage.getItem(`tina_journal_${year}`);
-        if(localData) try { setRecords(JSON.parse(localData)); } catch(e) {}
-    }, [year]);
+        } else {
+            // --- LOCAL MODE: Load from LocalStorage ---
+            const savedCats = localStorage.getItem('tina_journal_categories');
+            if (savedCats) { try { setCategories(JSON.parse(savedCats)); } catch(e) {} }
+            
+            const savedPlayers = localStorage.getItem('tina_journal_players');
+            if (savedPlayers) { try { setMahjongPlayers(JSON.parse(savedPlayers)); } catch(e) {} }
+            
+            const savedTemplates = localStorage.getItem('tina_journal_templates');
+            if (savedTemplates) { try { setTemplates(JSON.parse(savedTemplates)); } catch(e) {} }
 
+            const localData = localStorage.getItem(`tina_journal_${year}`);
+            if(localData) try { setRecords(JSON.parse(localData)); } catch(e) {}
+            
+            setIsSyncing(false);
+        }
+
+        return () => {
+            if (unsubscribeFirestore) unsubscribeFirestore();
+        };
+    }, [user, year]);
+
+    // 2. Save Data (Triggered when data changes)
+    // We use a debounce or direct save. For simplicity in React flow, we'll save whenever state changes.
+    // OPTIMIZATION: In a real app, we might want to batch this or use useReducer, 
+    // but for this scale, saving the whole JSON object for the year is acceptable.
+    const saveData = async (
+        newRecords: AppRecord[], 
+        newCats: CategoryConfig, 
+        newPlayers: string[], 
+        newTemplates: Template[]
+    ) => {
+        if (user) {
+            // --- CLOUD MODE: Save to Firestore ---
+            // We don't need to do anything here IF the state change came from the snapshot listener.
+            // However, distinguishing that is hard. 
+            // Better approach: create specific actions for add/update/delete that call Firestore directly.
+            // BUT, to minimize code refactoring of the existing App structure (which relies on setRecords),
+            // we will effectively "sync back" state changes to Firestore.
+            // To avoid infinite loops with onSnapshot, we usually compare, but setDoc merges.
+            
+            try {
+                // Note: Writing to Firestore will trigger onSnapshot locally immediately (latency compensation),
+                // so the UI updates fast.
+                await setDoc(doc(db, 'users', user.uid, 'years', year.toString()), {
+                    records: newRecords,
+                    categories: newCats,
+                    players: newPlayers,
+                    templates: newTemplates,
+                    lastUpdated: new Date().toISOString()
+                }, { merge: true });
+            } catch (e) {
+                console.error("Save to cloud failed", e);
+                showNotification("雲端儲存失敗", "error");
+            }
+        } else {
+            // --- LOCAL MODE: Save to LocalStorage ---
+            localStorage.setItem(`tina_journal_${year}`, JSON.stringify(newRecords));
+            localStorage.setItem('tina_journal_categories', JSON.stringify(newCats));
+            localStorage.setItem('tina_journal_players', JSON.stringify(newPlayers));
+            localStorage.setItem('tina_journal_templates', JSON.stringify(newTemplates));
+        }
+    };
+
+    // Use Effect to trigger save when any data state changes
+    // Skip the very first render to avoid overwriting cloud with empty local state before sync
+    const isFirstRender = useRef(true);
     useEffect(() => {
-        localStorage.setItem(`tina_journal_${year}`, JSON.stringify(records));
-    }, [records, year]);
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            return;
+        }
+        // Only save if we are not currently receiving a sync update (approximated)
+        if (!isSyncing) {
+            saveData(records, categories, mahjongPlayers, templates);
+        }
+    }, [records, categories, mahjongPlayers, templates]);
+
 
     // --- Computed ---
     const totalBalance = useMemo(() => records.reduce((acc, curr) => {
@@ -75,7 +177,6 @@ const App = () => {
 
     // --- Actions ---
     const showNotification = (msg: string, type: 'success' | 'error' | 'add' | 'delete' | 'edit' | 'backup' = 'success') => { 
-        // Use 'toast' style for errors, 'modal' for everything else
         const style = type === 'error' ? 'toast' : 'modal';
         setNotification({ msg, type, style }); 
         setTimeout(() => setNotification(null), 1500);
@@ -145,7 +246,7 @@ const App = () => {
             isDestructive: true,
             onConfirm: () => {
                 setRecords([]);
-                localStorage.removeItem(`tina_journal_${year}`);
+                if (!user) localStorage.removeItem(`tina_journal_${year}`);
                 showNotification("資料已全部清除", "delete");
                 setShowSettings(false);
                 closeConfirm();
@@ -167,20 +268,16 @@ const App = () => {
         const fileName = `life_journal_backup_${year}_${new Date().toISOString().split('T')[0]}.json`;
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         
-        // Try Web Share API Level 2 (for mobile experience)
         if (navigator.canShare && navigator.canShare({ files: [new File([blob], fileName, { type: 'application/json' })] })) {
             try {
                 await navigator.share({
                     files: [new File([blob], fileName, { type: 'application/json' })],
                     title: 'Life Journal Backup',
                 });
-                return; // Shared successfully
-            } catch (e) {
-                // Ignore AbortError if user cancelled share, fallthrough to download
-            }
+                return;
+            } catch (e) {}
         }
 
-        // Fallback to classic download
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
@@ -208,7 +305,6 @@ const App = () => {
                     message: `確定要還原 ${data.records.length} 筆資料嗎？目前的資料將會被覆蓋！`,
                     isDestructive: true,
                     onConfirm: () => {
-                        // Restore Logic
                         if (data.categories) setCategories(data.categories);
                         if (data.players) setMahjongPlayers(data.players);
                         if (data.records) setRecords(data.records);
@@ -224,7 +320,6 @@ const App = () => {
             }
         };
         reader.readAsText(file);
-        // Reset input
         event.target.value = '';
     };
 
@@ -236,7 +331,6 @@ const App = () => {
         const fileName = `life_journal_${year}.csv`;
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
 
-         // Try Web Share API Level 2 (for mobile experience)
          if (navigator.canShare && navigator.canShare({ files: [new File([blob], fileName, { type: 'text/csv' })] })) {
             try {
                 await navigator.share({
@@ -244,9 +338,7 @@ const App = () => {
                     title: 'Life Journal Report',
                 });
                 return;
-            } catch (e) {
-                // Fallthrough
-            }
+            } catch (e) {}
         }
 
         const url = URL.createObjectURL(blob);
@@ -337,19 +429,38 @@ const App = () => {
                     </div>
                     <div>
                         <h1 className="font-sans font-bold text-3xl tracking-widest text-white leading-none drop-shadow-sm">LIFE</h1>
-                        <p className="text-[10px] tracking-[0.3em] text-white/80 mt-1 uppercase border-l-2 border-white/50 pl-2 font-sans">Journal</p>
+                        <p className="text-[10px] tracking-[0.3em] text-white/80 mt-1 uppercase border-l-2 border-white/50 pl-2 font-sans">
+                            {user ? 'Cloud Sync' : 'Local Mode'}
+                        </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-4">
-                    <div className="flex flex-col items-end">
+                <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-end mr-2">
                         <p className="text-[10px] text-white/80 uppercase tracking-widest mb-0.5 font-sans">總資產</p>
                         <span className={`font-sans text-lg font-medium tracking-tight drop-shadow-sm leading-none ${totalBalance >= 0 ? 'text-white' : 'text-muji-green'}`}>
                             {formatMoney(totalBalance)}
                         </span>
                     </div>
-                    <button onClick={()=>{setShowSettings(!showSettings); setSettingsPage('menu');}} className="text-white/70 hover:text-white transition p-1"><Icons.Settings size={22} /></button>
+                    {/* Cloud Login Toggle Button */}
+                    <button 
+                        onClick={() => {
+                            if (!user) setShowLogin(true);
+                            else { setShowSettings(true); setSettingsPage('menu'); }
+                        }}
+                        className={`p-2 rounded-full transition ${user ? 'bg-white/20 text-white shadow-inner' : 'text-white/70 hover:text-white hover:bg-white/10'}`}
+                        title={user ? "已登入" : "點此登入雲端"}
+                    >
+                        <Icons.User size={22} fill={!!user} />
+                    </button>
+                    {/* Settings Button */}
+                    <button onClick={()=>{setShowSettings(!showSettings); setSettingsPage('menu');}} className="text-white/70 hover:text-white transition p-2 hover:bg-white/10 rounded-full"><Icons.Settings size={22} /></button>
                 </div>
             </header>
+
+            {/* Login View Modal */}
+            {showLogin && (
+                <LoginView onClose={() => setShowLogin(false)} showNotification={showNotification} />
+            )}
 
             {/* Notification - Modal Style (Success/Add/Edit/Delete) */}
             {notification && notification.style === 'modal' && (
@@ -427,6 +538,32 @@ const App = () => {
                         <div className="flex-1 overflow-y-auto px-6 py-2">
                             {settingsPage === 'menu' ? (
                                 <div className="space-y-6">
+                                    
+                                    {/* Auth Section */}
+                                    <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                                        {user ? (
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-full bg-muji-ink text-white flex items-center justify-center font-bold text-sm">
+                                                        {user.email ? user.email[0].toUpperCase() : 'U'}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-gray-400">目前登入</p>
+                                                        <p className="text-sm font-bold text-muji-text truncate max-w-[120px]">{user.displayName || user.email}</p>
+                                                    </div>
+                                                </div>
+                                                <button onClick={() => { signOut(auth); showNotification("已登出", "success"); }} className="text-xs px-3 py-1.5 bg-gray-100 text-gray-500 rounded-lg hover:bg-gray-200">登出</button>
+                                            </div>
+                                        ) : (
+                                            <button onClick={() => setShowLogin(true)} className="w-full py-2 bg-muji-ink text-white rounded-lg text-sm font-bold shadow-md hover:opacity-90 transition">
+                                                登入 / 註冊雲端帳號
+                                            </button>
+                                        )}
+                                        <p className="text-[10px] text-gray-400 mt-2 text-center">
+                                            {user ? "資料已自動同步至雲端" : "目前使用本機儲存，登入後可跨裝置同步"}
+                                        </p>
+                                    </div>
+
                                     <div>
                                         <div className="space-y-1">
                                             <SettingsItem icon={<Icons.List size={18}/>} label="類別管理" onClick={()=>setSettingsPage('categories')} subLabel="自訂收支項目"/>
@@ -453,7 +590,7 @@ const App = () => {
                         </div>
                         <div className="p-6 text-center border-t border-white/50">
                             <p className="text-[10px] text-gray-400 font-sans tracking-widest uppercase">
-                                Life Journal {year} • V1.1 <br/> Local Storage
+                                Life Journal {year} • V2.0 <br/> {user ? 'Cloud Mode' : 'Local Mode'}
                             </p>
                         </div>
                     </div>
