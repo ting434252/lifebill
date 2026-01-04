@@ -7,7 +7,7 @@ export default defineConfig({
   // 如果您的網址是 https://username.github.io/repo-name/
   // 請將 './' 改為 '/repo-name/'。
   // 如果不確定，保留 './' 通常也能運作（相對路徑模式）。
-  base: './', 
+  base: '/LIFEBILL/', 
   build: {
     outDir: 'dist',
     sourcemap: false

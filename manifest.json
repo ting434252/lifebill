@@ -1,7 +1,8 @@
 {
   "name": "Tina Journal",
   "short_name": "Tina",
-  "start_url": "./index.html",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
   "background_color": "#F4F3F0",
   "theme_color": "#BBADA2",
