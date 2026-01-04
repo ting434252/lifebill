@@ -24,7 +24,7 @@ const IconWrapper: React.FC<IconProps> = ({ children, size = 24, className = "",
     </svg>
 );
 
-export const TinaLogo = ({ className = "" }: { className?: string }) => (
+export const AppLogo = ({ className = "" }: { className?: string }) => (
     <svg width="32" height="32" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
         <rect x="8" y="6" width="24" height="28" rx="3" stroke="currentColor" strokeWidth="2.5"/>
         <path d="M13 6V34" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.5"/>

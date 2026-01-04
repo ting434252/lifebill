@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Icons, TinaLogo } from './components/Icons';
+import { Icons, AppLogo } from './components/Icons';
 import { DailyForm, TeaForm, MahjongForm } from './components/Forms';
 import { CalendarView } from './components/views/CalendarView';
 import { StatsView } from './components/views/StatsView';
@@ -21,6 +21,7 @@ const App = () => {
     const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>({ isOpen: false, message: '', onConfirm: null, isDestructive: false });
     const [editingRecord, setEditingRecord] = useState<AppRecord | null>(null);
     
+    // NOTE: Keep internal storage keys as 'tina_journal' to preserve user data
     const [categories, setCategories] = useState<CategoryConfig>({
         expense: ['餐飲','交通','購物','娛樂','居家'],
         income: ['薪水','獎金','投資']
@@ -120,7 +121,7 @@ const App = () => {
         }).join("\n");
         const link = document.createElement("a"); 
         link.setAttribute("href", encodeURI(csvContent)); 
-        link.setAttribute("download", `tina_journal_${year}.csv`);
+        link.setAttribute("download", `life_journal_${year}.csv`);
         document.body.appendChild(link); 
         link.click();
         document.body.removeChild(link);
@@ -196,10 +197,10 @@ const App = () => {
             <header className="px-6 py-3 bg-muji-ink text-white flex justify-between items-center shadow-md relative z-10 transition-colors duration-300 flex-shrink-0">
                 <div className="flex items-center gap-3">
                     <div className="bg-white/10 p-1.5 rounded-xl shadow-inner backdrop-blur-sm border border-white/20">
-                        <TinaLogo className="text-white w-8 h-8 drop-shadow-sm" />
+                        <AppLogo className="text-white w-8 h-8 drop-shadow-sm" />
                     </div>
                     <div>
-                        <h1 className="font-sans font-bold text-3xl tracking-widest text-white leading-none drop-shadow-sm">TINA</h1>
+                        <h1 className="font-sans font-bold text-3xl tracking-widest text-white leading-none drop-shadow-sm">LIFE</h1>
                         <p className="text-[10px] tracking-[0.3em] text-white/80 mt-1 uppercase border-l-2 border-white/50 pl-2 font-sans">Journal</p>
                     </div>
                 </div>
@@ -307,7 +308,7 @@ const App = () => {
                         </div>
                         <div className="p-6 text-center border-t border-white/50">
                             <p className="text-[10px] text-gray-400 font-sans tracking-widest uppercase">
-                                Tina Journal {year} • V1.0 <br/> Local Storage
+                                Life Journal {year} • V1.0 <br/> Local Storage
                             </p>
                         </div>
                     </div>
