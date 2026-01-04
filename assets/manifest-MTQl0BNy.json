@@ -1,8 +1,8 @@
 {
   "name": "Tina Journal",
   "short_name": "Tina",
-  "start_url": ".",
-  "scope": ".",
+  "start_url": "/LIFEBILL/index.html",
+  "scope": "/LIFEBILL/",
   "display": "standalone",
   "background_color": "#F4F3F0",
   "theme_color": "#BBADA2",
